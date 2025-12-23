@@ -1,6 +1,21 @@
-
 import { Mail, Phone, MapPin, Shield, Key, LogOut } from 'lucide-react'
+import { supabase } from '../../lib/supabase'
+import { useNavigate } from 'react-router-dom'
+
 export function Profile() {
+  const navigate = useNavigate()
+
+  const handleSignOut = async () => {
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) throw error
+      navigate('/login')
+    } catch (error) {
+      console.error('Error signing out:', error)
+      alert('Failed to sign out. Please try again.')
+    }
+  }
+
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
       <div className="flex items-end justify-between pb-4 border-b border-slate-200 dark:border-neutral-800">
@@ -102,7 +117,10 @@ export function Profile() {
         </div>
       </div>
 
-      <button className="w-full p-4 flex items-center justify-center space-x-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-transparent hover:border-rose-200 dark:hover:border-rose-900 rounded-lg transition-all">
+      <button
+        onClick={handleSignOut}
+        className="w-full p-4 flex items-center justify-center space-x-2 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30 border border-transparent hover:border-rose-200 dark:hover:border-rose-900 rounded-lg transition-all"
+      >
         <LogOut className="w-4 h-4" />
         <span className="text-sm font-medium">Sign Out</span>
       </button>

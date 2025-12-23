@@ -1,19 +1,16 @@
-import { Outlet, useNavigation } from "react-router-dom";
+import { Outlet } from "react-router-dom";
 import { FloatingNav } from "../components/FloatingNav";
 import { SearchOverlay } from "../components/SearchOverlay";
 import { AddPersonForm } from "../components/AddPersonForm";
 import type { Page } from '../components/FloatingNav'
 import { useEffect, useState } from "react";
 import { FilterPanel } from "../components/FilterPanel";
-import { Loader2 } from "lucide-react";
-import { supabase } from "../lib/supabase";
 import { PersonDetailsCard } from "../components/PersonDetailsCard";
 
 export default function AdminLayout() {
     // App View State
     const [view] = useState<'landing' | 'app'>('landing')
     const [currentPage] = useState<Page>('dashboard')
-    const [isLoading, setIsLoading] = useState(true)
     const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
 
     // Overlay States
@@ -25,33 +22,8 @@ export default function AdminLayout() {
         {},
     )
 
-    // Initial Session Check
-    useEffect(() => {
-        const checkSession = async () => {
-            try {
-                const { data: { session } } = await supabase.auth.getSession()
-                if (!session) {
-                    // Redirect to login if no session
-                    window.location.href = '/#/login' // Using hash router
-                }
-            } catch (error) {
-                console.error("Session check failed", error)
-            } finally {
-                // Add a small artificial delay for smooth UX if it loads too fast
-                setTimeout(() => setIsLoading(false), 800)
-            }
-        }
-        checkSession()
-
-        // Listen for auth changes (sign out, etc)
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-            if (!session) {
-                window.location.href = '/#/login'
-            }
-        })
-
-        return () => subscription.unsubscribe()
-    }, [])
+    // Note: Session check and auth state are now handled at the App level by ProtectedRoute.
+    // AdminLayout only renders when the user is already authenticated.
 
 
     // Keyboard shortcuts for global actions
@@ -97,17 +69,6 @@ export default function AdminLayout() {
             default:
                 console.log('Unknown action:', action)
         }
-    }
-
-    if (isLoading) {
-        return (
-            <div className="h-screen w-full flex items-center justify-center bg-slate-50 dark:bg-black">
-                <div className="flex flex-col items-center gap-4">
-                    <Loader2 className="h-8 w-8 animate-spin text-rose-500" />
-                    <p className="text-sm font-medium text-slate-500 animate-pulse">Initializing CommunityDB...</p>
-                </div>
-            </div>
-        )
     }
 
     return (

@@ -1,182 +1,214 @@
--- Enable necessary extensions
 create extension if not exists "uuid-ossp";
-create extension if not exists "postgis"; 
+create extension if not exists "postgis";
 
--- 1. PEOPLE (The Census Table)
+-- PEOPLE TABLE
 create table public.people (
-    id uuid primary key default uuid_generate_v4(),
-    user_id uuid references auth.users(id), 
-    full_name text not null,
-    first_name text,
-    middle_name text,
-    last_name text,
-    phone text, 
-    email text,
-    address_line text,
-    locality_area text,
-    geo_location geography(POINT),
-    
-    -- Emergency & Volunteer Data
-    blood_group text check (blood_group in ('A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-')),
-    is_blood_donor boolean default false,
-    last_donation_date date,
-    is_volunteer boolean default false,
-    skills text[],
-    availability jsonb default '{}'::jsonb,
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid unique references auth.users(id) on delete cascade,
 
-    -- Other optional info
-    marital_status text check (marital_status in ('single', 'married', 'divorced', 'widowed', 'separated')),
-    children_count int,
-    children_ids uuid[], -- Logical reference to public.people(id)
-    
-    is_blocked boolean default false,
-    blocker_at timestamp with time zone,
-    blocker_id uuid references auth.users(id),
+  full_name text not null,
+  first_name text,
+  middle_name text,
+  last_name text,
 
-    created_by uuid references auth.users(id),
-    created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-    updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+  email text unique,
+  phone text,
+
+  address_line text,
+  locality_area text,
+  geo_location geography(POINT),
+
+  blood_group text check (blood_group in ('A+','A-','B+','B-','AB+','AB-','O+','O-')),
+  is_blood_donor boolean default false,
+  last_donation_date date,
+
+  is_volunteer boolean default false,
+  skills text[],
+  availability jsonb default '{}'::jsonb,
+
+  marital_status text check (marital_status in ('single','married','divorced','widowed','separated')),
+  children_count int,
+  children_ids uuid[],
+
+  is_blocked boolean default false,
+  blocked_at timestamptz,
+  blocked_by uuid references auth.users(id),
+
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
-create index people_phone_idx on public.people(phone);
-create index people_geo_idx on public.people using GIST(geo_location);
+create index people_user_id_idx on public.people(user_id);
+create index people_geo_idx on public.people using gist (geo_location);
 
--- 1.1 DELETED PEOPLE ARCHIVE (Audit Trail)
-create table public.deleted_people as select * from public.people with no data;
-alter table public.deleted_people add column deleted_at timestamp with time zone default timezone('utc'::text, now());
-alter table public.deleted_people add column deleted_by uuid; -- Can try to capture via auth.uid() if possible in trigger
-
--- Trigger Function to Archive People
-create or replace function public.archive_deleted_person()
-returns trigger as $$
-begin
-    insert into public.deleted_people (
-        id, user_id, full_name, first_name, middle_name, last_name, phone, email, address_line, locality_area, geo_location,
-        blood_group, is_blood_donor, last_donation_date, is_volunteer, skills, availability,
-        marital_status, children_count, children_ids, is_blocked, blocker_at, blocker_id,
-        created_by, created_at, updated_at, deleted_at, deleted_by
-    )
-    values (
-        OLD.id, OLD.user_id, OLD.full_name, OLD.first_name, OLD.middle_name, OLD.last_name, OLD.phone, OLD.email, OLD.address_line, OLD.locality_area, OLD.geo_location,
-        OLD.blood_group, OLD.is_blood_donor, OLD.last_donation_date, OLD.is_volunteer, OLD.skills, OLD.availability,
-        OLD.marital_status, OLD.children_count, OLD.children_ids, OLD.is_blocked, OLD.blocker_at, OLD.blocker_id,
-        OLD.created_by, OLD.created_at, OLD.updated_at, now(), auth.uid()
-    );
-    return OLD;
-end;
-$$ language plpgsql security definer;
-
--- Trigger
-create trigger on_person_delete
-    after delete on public.people
-    for each row execute function public.archive_deleted_person();
-
--- RLS for Deleted Table (Admins only)
-alter table public.deleted_people enable row level security;
-
-
--- 1.5 ADMINS (Separate Table)
+-- ADMINS TABLE
 create table public.admins (
-    id uuid primary key default uuid_generate_v4(),
-    user_id uuid references auth.users(id) on delete cascade,
-    person_id uuid unique references public.people(id) on delete cascade,
-    role text not null check (role in ('super_admin', 'admin', 'volunteer')), -- Volunteer role in admin table implies elevated trust? No, stick to request.
-    -- Wait, user said "volunteer can only add...". Is volunteer an admin role or just is_volunteer? 
-    -- User said "make moderator into volunteer". So 'volunteer' is a role in admins table context? 
-    -- Or is it just a permission level? 
-    -- I will assume 'volunteer' IN admins table is a specific staff role.
-    
-    department text,
-    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid unique references auth.users(id) on delete cascade,
+  person_id uuid unique references public.people(id) on delete cascade,
+
+  role text not null check (role in ('super_admin','admin','volunteer')),
+  department text,
+
+  created_at timestamptz default now()
 );
 
--- 2. EVENTS
+-- FETCH LOGGED IN USER ROLE
+create or replace function public.get_user_role()
+returns text
+language plpgsql
+security definer
+set search_path = public
+set row_security = off
+as $$
+declare r text;
+begin
+  select role into r
+  from public.admins
+  where user_id = auth.uid()
+  limit 1;
+
+  return r;
+end;
+$$;
+
+-- CHECK IF THE CURRENT USER IS NOT BLOCKED
+create or replace function public.is_not_blocked()
+returns boolean
+language plpgsql
+security definer
+as $$
+begin
+  return exists (
+    select 1 from public.people
+    where user_id = auth.uid()
+      and (is_blocked = false or is_blocked is null)
+  );
+end;
+$$;
+
+-- PROMOTE TO ADMIN
+create or replace function public.promote_to_admin(
+  target_person_id uuid,
+  target_role text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if public.get_user_role() <> 'super_admin' then
+    raise exception 'Unauthorized';
+  end if;
+
+  insert into public.admins (user_id, person_id, role)
+  select user_id, id, target_role
+  from public.people
+  where id = target_person_id;
+end;
+$$;
+
+-- EVENTS TABLE
 create table public.events (
-    id uuid primary key default uuid_generate_v4(),
-    title text not null,
-    description text,
-    start_time timestamp with time zone not null,
-    end_time timestamp with time zone,
-    type text check (type in ('donation_drive', 'cleanup', 'emergency_alert', 'workshop', 'other')),
-    required_skills text[],
-    status text check (status in ('draft', 'active', 'completed', 'cancelled')) default 'draft',
-    location_name text,
-    location_coordinates geography(POINT),
-    cover_image_url text, -- For the UI card image
-    organizer_id uuid references auth.users(id),
-    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+  id uuid primary key default uuid_generate_v4(),
+  title text not null,
+  description text,
+  start_time timestamptz not null,
+  end_time timestamptz,
+
+  type text check (type in ('donation_drive','cleanup','emergency','workshop','other')),
+  status text check (status in ('draft','active','completed','cancelled')) default 'draft',
+
+  location_name text,
+  location_coordinates geography(POINT),
+
+  organizer_id uuid references auth.users(id),
+  created_at timestamptz default now()
 );
 
--- 3. EVENT PARTICIPANTS
+-- EVENT PARTICIPANTS TABLE
 create table public.event_participants (
-    event_id uuid references public.events(id) on delete cascade,
-    person_id uuid references public.people(id) on delete cascade,
-    role text check (role in ('volunteer', 'donor', 'organizer', 'attendee')),
-    status text check (status in ('registered', 'confirmed', 'attended', 'noshow')) default 'registered',
-    primary key (event_id, person_id)
+  event_id uuid references public.events(id) on delete cascade,
+  person_id uuid references public.people(id) on delete cascade,
+
+  role text check (role in ('volunteer','donor','organizer','attendee')),
+  status text check (status in ('registered','confirmed','attended','noshow')) default 'registered',
+
+  primary key (event_id, person_id)
 );
 
--- 4. RESOURCES
+-- RESOURCES TABLE
 create table public.resources (
-    id uuid primary key default uuid_generate_v4(),
-    donor_id uuid references public.people(id),
-    event_id uuid references public.events(id),
-    type text check (type in ('money', 'blood', 'food', 'kits', 'other')),
-    quantity numeric not null,
-    unit text not null, 
-    description text,
-    collected_at timestamp with time zone default timezone('utc'::text, now()),
-    status text check (status in ('pledged', 'collected', 'distributed')) default 'collected'
+  id uuid primary key default uuid_generate_v4(),
+  donor_id uuid references public.people(id),
+  event_id uuid references public.events(id),
+
+  type text check (type in ('money','blood','food','kits','other')),
+  quantity numeric not null,
+  unit text not null,
+
+  status text check (status in ('pledged','collected','distributed')) default 'collected',
+  collected_at timestamptz default now()
 );
 
--- 5. ASSISTANCE REQUESTS (Help needed)
+-- ASSISTANCE REQUESTS TABLE
 create table public.assistance_requests (
-    id uuid primary key default uuid_generate_v4(),
-    requestor_id uuid references public.people(id), -- Who needs help
-    type text check (type in ('blood', 'financial', 'food', 'medical', 'transport', 'other')),
-    description text,
-    urgency text check (urgency in ('low', 'medium', 'high', 'critical')) default 'medium',
-    status text check (status in ('open', 'in_progress', 'resolved', 'rejected', 'cancelled')) default 'open',
-    
-    assigned_volunteer_id uuid references public.people(id), -- Who is helping
-    
-    created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-    updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+  id uuid primary key default uuid_generate_v4(),
+  requestor_id uuid references public.people(id),
+  assigned_volunteer_id uuid references public.people(id),
+
+  type text check (type in ('blood','financial','food','medical','transport','other')),
+  urgency text check (urgency in ('low','medium','high','critical')) default 'medium',
+  status text check (status in ('open','in_progress','resolved','rejected','cancelled')) default 'open',
+
+  description text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
--- 6. PARTNER ASSOCIATIONS
+-- ASSISTANCE REQUESTS TABLE
+create table public.assistance_requests (
+  id uuid primary key default uuid_generate_v4(),
+  requestor_id uuid references public.people(id),
+  assigned_volunteer_id uuid references public.people(id),
+
+  type text check (type in ('blood','financial','food','medical','transport','other')),
+  urgency text check (urgency in ('low','medium','high','critical')) default 'medium',
+  status text check (status in ('open','in_progress','resolved','rejected','cancelled')) default 'open',
+
+  description text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+-- PARTNERS TABLE
 create table public.partners (
-    id uuid primary key default uuid_generate_v4(),
-    name text not null,
-    description text,
-    logo text,
-    website text,
-    instagram text,
-    facebook text,
-    twitter text,
-    display_order int null unique,
-    is_displayed boolean default true,
-    created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-    updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+  id uuid primary key default uuid_generate_v4(),
+  name text not null,
+  description text,
+  logo text,
+  website text,
+
+  is_displayed boolean default true,
+  created_at timestamptz default now()
 );
 
--- 7. SOCIAL FEED (Curated Community Posts)
+-- SOCIAL POSTS TABLE
 create table public.social_posts (
-    id uuid primary key default uuid_generate_v4(),
-    platform text check (platform in ('twitter', 'instagram', 'facebook', 'linkedin')),
-    author_name text,
-    author_handle text,
-    content text,
-    image_url text,
-    post_url text,
-    published_at timestamp with time zone,
-    likes_count int default 0,
-    comments_count int default 0,
-    is_featured boolean default true,
-    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+  id uuid primary key default uuid_generate_v4(),
+  platform text check (platform in ('twitter','instagram','facebook','linkedin')),
+  author_name text,
+  content text,
+  image_url text,
+  post_url text,
+
+  is_featured boolean default true,
+  published_at timestamptz,
+  created_at timestamptz default now()
 );
 
--- RLS
+-- ENABLE ROW LEVEL SECURITY
 alter table public.people enable row level security;
 alter table public.admins enable row level security;
 alter table public.events enable row level security;
@@ -186,181 +218,105 @@ alter table public.assistance_requests enable row level security;
 alter table public.partners enable row level security;
 alter table public.social_posts enable row level security;
 
--- FUNCTIONS
-create or replace function public.get_user_role() 
-returns text as $$
-  select role from public.admins where user_id = auth.uid() limit 1;
-$$ language sql stable security definer;
 
-create or replace function public.is_volunteer_flag() 
-returns boolean as $$
-  select exists (
-    select 1 from public.people 
-    where user_id = auth.uid() and is_volunteer = true
-  );
-$$ language sql stable security definer;
-
--- --- PEOPLE POLICIES ---
-
--- 1. VIEW: Authenticated users can read
-create policy "Authenticated users can view people"
+-- PEOPLE TABLE POLICIES
+create policy "Users view people"
 on public.people for select
 to authenticated
 using (true);
 
--- 2. INSERT: Superadmin, Admin, Volunteer
-create policy "Authorized users can add people"
+create policy "Users create own profile"
 on public.people for insert
 to authenticated
-with check (
-  public.get_user_role() in ('super_admin', 'admin', 'volunteer') OR public.is_volunteer_flag()
-);
+with check (auth.uid() = user_id);
 
--- 3. UPDATE: 
--- A. Superadmin: update ANYONE
-create policy "Superadmin update all"
-on public.people for update
-to authenticated
-using ( public.get_user_role() = 'super_admin' );
-
--- B. Admin: update ANYONE EXCEPT other Admins/Superadmins
-create policy "Admin update non-admins"
-on public.people for update
-to authenticated
-using (
-  public.get_user_role() = 'admin' 
-  AND 
-  NOT exists (select 1 from public.admins where person_id = public.people.id)
-);
-
--- C. Volunteer: update ONLY basic profile (Assuming they can update rows they created or just general citizens)
--- User check: "volunteer can only add or update basic info of people"
--- I'll interpret this as volunteers can update people who are NOT admins.
-create policy "Volunteer update non-admins"
-on public.people for update
-to authenticated
-using (
-  (public.get_user_role() = 'volunteer' OR public.is_volunteer_flag())
-  AND
-  NOT exists (select 1 from public.admins where person_id = public.people.id)
-);
-
--- D. Users update self
 create policy "Users update self"
 on public.people for update
 to authenticated
-using ( auth.uid() = user_id );
+using (auth.uid() = user_id and public.is_not_blocked());
 
--- 4. DELETE
--- A. Superadmin: Delete anyone
-create policy "Superadmin delete"
-on public.people for delete
-to authenticated
-using ( public.get_user_role() = 'super_admin' );
 
--- B. Admin: Delete non-admins
-create policy "Admin delete non-admins"
-on public.people for delete
+-- ADMINS TABLE POLICIES
+create policy "View admins"
+on public.admins for select
 to authenticated
-using (
-  public.get_user_role() = 'admin'
-  AND
-  NOT exists (select 1 from public.admins where person_id = public.people.id)
+using (true);
+
+create policy "Super admin manages admins"
+on public.admins for all
+to authenticated
+using (public.get_user_role() = 'super_admin');
+
+
+-- DELETED PEOPLE TABLE
+create table public.deleted_people (
+    id uuid primary key, -- same as the original person
+    user_id uuid,
+    full_name text not null,
+    first_name text,
+    middle_name text,
+    last_name text,
+    email text,
+    phone text,
+    address_line text,
+    locality_area text,
+    geo_location geography(POINT),
+    blood_group text check (blood_group in ('A+','A-','B+','B-','AB+','AB-','O+','O-')),
+    is_blood_donor boolean default false,
+    last_donation_date date,
+    is_volunteer boolean default false,
+    skills text[],
+    availability jsonb default '{}'::jsonb,
+    marital_status text check (marital_status in ('single','married','divorced','widowed','separated')),
+    children_count int,
+    children_ids uuid[],
+    is_blocked boolean default false,
+    blocked_at timestamptz,
+    blocked_by uuid,
+    admins jsonb, -- store role info as JSON
+    created_at timestamptz,
+    updated_at timestamptz,
+    deleted_at timestamptz default now(),
+    deleted_by uuid references auth.users(id)
 );
 
--- Volunteer: NO DELETE (Implicitly denied by lack of policy)
+create index deleted_people_user_id_idx on public.deleted_people(user_id);
+create index deleted_people_geo_idx on public.deleted_people using gist (geo_location);
 
--- E. Deleted People (Admins Only)
-create policy "Admins view deleted profiles"
-on public.deleted_people for select
-to authenticated
-using ( public.get_user_role() in ('super_admin', 'admin') );
+-- FUNCTION: archive deleted people
+create or replace function public.archive_deleted_people()
+returns trigger
+language plpgsql
+security definer
+as $$
+begin
+    insert into public.deleted_people (
+        id, user_id, full_name, first_name, middle_name, last_name,
+        email, phone, address_line, locality_area, geo_location,
+        blood_group, is_blood_donor, last_donation_date,
+        is_volunteer, skills, availability,
+        marital_status, children_count, children_ids,
+        is_blocked, blocked_at, blocked_by, admins,
+        created_at, updated_at, deleted_by
+    )
+    values (
+        old.id, old.user_id, old.full_name, old.first_name, old.middle_name, old.last_name,
+        old.email, old.phone, old.address_line, old.locality_area, old.geo_location,
+        old.blood_group, old.is_blood_donor, old.last_donation_date,
+        old.is_volunteer, old.skills, old.availability,
+        old.marital_status, old.children_count, old.children_ids,
+        old.is_blocked, old.blocked_at, old.blocked_by,
+        (select jsonb_agg(jsonb_build_object('role', role)) from admins where person_id = old.id),
+        old.created_at, old.updated_at, auth.uid()
+    );
 
+    return old;
+end;
+$$;
 
--- --- ASSISTANCE REQUESTS POLICIES ---
+-- TRIGGER
+create trigger trigger_archive_deleted_people
+before delete on public.people
+for each row
+execute function public.archive_deleted_people();
 
--- 1. VIEW
--- A. Volunteers/Admins: View ALL requests
-create policy "Volunteers/Admins view all requests"
-on public.assistance_requests for select
-to authenticated
-using (
-  public.get_user_role() in ('super_admin', 'admin', 'volunteer') OR public.is_volunteer_flag()
-);
-
--- B. Users: View OWN requests
-create policy "Users view own requests"
-on public.assistance_requests for select
-to authenticated
-using (
-  requestor_id in (select id from public.people where user_id = auth.uid())
-);
-
--- 2. INSERT
--- A. Authenticated Users (Request for self)
-create policy "Users can request help"
-on public.assistance_requests for insert
-to authenticated
-with check (
-  -- Ensure they are requesting for themselves (linked to their person_id)
-  requestor_id in (select id from public.people where user_id = auth.uid())
-  OR
-  -- OR Admins/Volunteers can create request for others
-  (public.get_user_role() in ('super_admin', 'admin', 'volunteer') OR public.is_volunteer_flag())
-);
-
--- 3. UPDATE
--- A. Admins: Full update
-create policy "Admins update requests"
-on public.assistance_requests for update
-to authenticated
-using ( public.get_user_role() in ('super_admin', 'admin') );
-
--- B. Volunteers: Can update status or assign themselves
-create policy "Volunteers update requests"
-on public.assistance_requests for update
-to authenticated
-using (
-  (public.get_user_role() = 'volunteer' OR public.is_volunteer_flag())
-)
-with check (
-  -- Limit what they can change? For now, allow general updates like status/assignee 
-  -- Ideally should use column-level privileges or trigger to validation, but simple Policy is okay here.
-  (public.get_user_role() = 'volunteer' OR public.is_volunteer_flag())
-);
-
--- C. Requestor: Can cancel or update description if Still Open
-create policy "Requestor update own open requests"
-on public.assistance_requests for update
-to authenticated
-using (
-  requestor_id in (select id from public.people where user_id = auth.uid())
-  AND status = 'open'
-);
-
-
--- --- PARTNERS POLICIES ---
-
--- 1. VIEW: Everyone (even public if using anon key, but sticking to authenticated here)
-create policy "Everyone views partners"
-on public.partners for select
-to authenticated
-using ( is_displayed = true );
-
--- 2. MANAGE: Admins only
-create policy "Admins manage partners"
-on public.partners for all
-to authenticated
-using ( public.get_user_role() in ('super_admin', 'admin') );
-
-
--- --- SOCIAL POSTS POLICIES ---
-create policy "Everyone views social posts"
-on public.social_posts for select
-to authenticated
-using ( is_featured = true );
-
-create policy "Admins manage social posts"
-on public.social_posts for all
-to authenticated
-using ( public.get_user_role() in ('super_admin', 'admin') );

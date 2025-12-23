@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react'
 import { DataTable } from '../../components/DataTable'
-import { peopleModel, type PersonData } from '../../models/peopleModel'
-import { Users, AlertCircle, Edit2, Trash2, Eye } from 'lucide-react'
+import { peopleModel, type PersonData, type DeletedPersonData } from '../../models/peopleModel'
+import { Users, AlertCircle, Edit2, Trash2, Eye, History } from 'lucide-react'
 import { PersonDetailsCard } from '../../components/PersonDetailsCard'
+import { useAppSelector } from '../../store'
 
 export function People() {
+  const { role: currentUserRole } = useAppSelector(state => state.auth)
   const [people, setPeople] = useState<PersonData[]>([])
+  const [deletedPeople, setDeletedPeople] = useState<DeletedPersonData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'active' | 'deleted'>('active')
 
   const openPersonDetails = (id: string) => {
     setSelectedPersonId(id)
@@ -21,11 +25,43 @@ export function People() {
   async function loadPeople() {
     try {
       setLoading(true)
-      const data = await peopleModel.getAllPeople()
-      setPeople(data || [])
+      const [activeData, deletedData] = await Promise.all([
+        peopleModel.getAllPeople(),
+        peopleModel.getDeletedPeople()
+      ])
+      setPeople(activeData || [])
+      setDeletedPeople(deletedData || [])
     } catch (err) {
       console.error('Failed to load people:', err)
       setError('Failed to load people data. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!window.confirm('Are you sure you want to delete this person? They will be archived in the deleted people section.')) return
+
+    try {
+      setLoading(true)
+      await peopleModel.deletePerson(id)
+      await loadPeople()
+    } catch (err) {
+      console.error('Error in handleDelete:', err)
+      alert('Failed to delete person. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleRestore(person: DeletedPersonData) {
+    try {
+      setLoading(true)
+      await peopleModel.restorePerson(person)
+      await loadPeople()
+    } catch (err) {
+      console.error('Failed to restore person:', err)
+      alert('Failed to restore person. Please try again.')
     } finally {
       setLoading(false)
     }
@@ -40,34 +76,75 @@ export function People() {
     {
       key: 'actions',
       header: 'Actions',
-      render: (row: PersonData) => (
-        <div className="flex items-center justify-start space-x-1">
-          {/* View Button */}
-          <button
-            className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
-            aria-label="View"
-            onClick={() => row.id && openPersonDetails(row.id)}
-          >
-            <Eye className="w-3.5 h-3.5" />
-          </button>
-          {/* Edit Button */}
-          <button
-            className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
-            aria-label="Edit"
-            onClick={() => console.log('Edit clicked', row.id)}
-          >
-            <Edit2 className="w-3.5 h-3.5" />
-          </button>
-          {/* Delete Button */}
-          <button
-            className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
-            aria-label="Delete"
-            onClick={() => console.log('Delete clicked', row.id)}
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )
+      render: (row: PersonData) => {
+        const isTargetAdmin = !!row.admins?.role && ['super_admin', 'admin'].includes(row.admins.role)
+        const canEdit = currentUserRole === 'super_admin' || (currentUserRole === 'admin' && !isTargetAdmin)
+        const canDelete = currentUserRole === 'super_admin' || (currentUserRole === 'admin' && !isTargetAdmin)
+
+        return (
+          <div className="flex items-center justify-start space-x-1">
+            <button
+              className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
+              aria-label="View"
+              onClick={() => row.id && openPersonDetails(row.id)}
+            >
+              <Eye className="w-3.5 h-3.5" />
+            </button>
+
+            {canEdit && (
+              <button
+                className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
+                aria-label="Edit"
+                onClick={() => console.log('Edit clicked', row.id)}
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {canDelete && (
+              <button
+                className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
+                aria-label="Delete"
+                onClick={() => row.id && handleDelete(row.id)}
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )
+      }
+    }
+  ]
+
+  const deletedColumns = [
+    { key: 'full_name', header: 'Name' },
+    { key: 'phone', header: 'Phone' },
+    { key: 'locality_area', header: 'Area' },
+    {
+      key: 'deleted_at',
+      header: 'Deleted At',
+      render: (row: DeletedPersonData) => new Date(row.deleted_at).toLocaleDateString()
+    },
+    {
+      key: 'actions',
+      header: 'Actions',
+      render: (row: DeletedPersonData) => {
+        const canRestore = currentUserRole === 'super_admin' || currentUserRole === 'admin'
+
+        return (
+          <div className="flex items-center justify-start space-x-1">
+            {canRestore && (
+              <button
+                className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
+                aria-label="Restore"
+                onClick={() => handleRestore(row)}
+              >
+                <History className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        )
+      }
     }
   ]
 
@@ -84,8 +161,35 @@ export function People() {
           </p>
         </div>
         <div className="text-xs font-mono text-slate-400">
-          {loading ? 'Loading...' : `${people.length} Records`}
+          {loading ? 'Loading...' : `${activeTab === 'active' ? people.length : deletedPeople.length} Records`}
         </div>
+      </div>
+
+      <div className="flex items-center gap-4 border-b border-slate-200 dark:border-neutral-800">
+        <button
+          className={`pb-2 px-1 text-sm font-medium transition-colors relative ${activeTab === 'active'
+            ? 'text-blue-600 dark:text-blue-400'
+            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          onClick={() => setActiveTab('active')}
+        >
+          Active People
+          {activeTab === 'active' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 dark:bg-blue-400" />
+          )}
+        </button>
+        <button
+          className={`pb-2 px-1 text-sm font-medium transition-colors relative ${activeTab === 'deleted'
+            ? 'text-blue-600 dark:text-blue-400'
+            : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          onClick={() => setActiveTab('deleted')}
+        >
+          Deleted People
+          {activeTab === 'deleted' && (
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 dark:bg-blue-400" />
+          )}
+        </button>
       </div>
 
       {error ? (
@@ -93,10 +197,16 @@ export function People() {
           <AlertCircle className="w-5 h-5" />
           {error}
         </div>
-      ) : (
+      ) : activeTab === 'active' ? (
         <DataTable
           data={people}
           columns={columns}
+          loading={loading}
+        />
+      ) : (
+        <DataTable
+          data={deletedPeople}
+          columns={deletedColumns}
           loading={loading}
         />
       )}

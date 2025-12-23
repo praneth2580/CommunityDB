@@ -37,6 +37,12 @@ export interface PersonData {
     is_blocked?: boolean
     created_at?: string
     updated_at?: string
+    admins?: { role: 'super_admin' | 'admin' | 'volunteer' } | null
+}
+
+export interface DeletedPersonData extends PersonData {
+    deleted_at: string
+    deleted_by?: string
 }
 
 export const peopleModel = {
@@ -136,10 +142,122 @@ export const peopleModel = {
     async getAllPeople() {
         const { data, error } = await supabase
             .from('people')
-            .select('*')
+            .select('*, admins(role)')
             .order('created_at', { ascending: false })
 
         if (error) throw error
+        return data as PersonData[]
+    },
+
+    /**
+     * Get all deleted people (Admin only)
+     */
+    async getDeletedPeople() {
+        const { data, error } = await supabase
+            .from('deleted_people')
+            .select('*')
+            .order('deleted_at', { ascending: false })
+
+        if (error) throw error
+        return data as DeletedPersonData[]
+    },
+
+    /**
+     * Restore a deleted person
+     */
+    async restorePerson(person: DeletedPersonData) {
+        // 1. Insert back into people
+        const { deleted_at, deleted_by, ...originalData } = person
+        const { data, error: insertError } = await supabase
+            .from('people')
+            .insert([originalData])
+            .select()
+            .single()
+
+        if (insertError) throw insertError
+
+        // 2. Delete from deleted_people
+        const { error: deleteError } = await supabase
+            .from('deleted_people')
+            .delete()
+            .eq('id', person.id)
+
+        if (deleteError) throw deleteError
+
         return data
+    },
+
+    /**
+     * Delete a person (will be archived by DB trigger)
+     */
+    async deletePerson(id: string) {
+        const { error } = await supabase
+            .from('people')
+            .delete()
+            .eq('id', id)
+
+        if (error) throw error
+    },
+
+    async getCurrentUserRole() {
+        console.log('[Model] getCurrentUserRole: Fetching role via direct query...')
+
+        try {
+            console.log("CALLED")
+            // Get the current user
+            const { data: { user } } = await supabase.auth.getUser()
+
+            console.log('[Model] getCurrentUserRole: User:', user)
+
+            if (!user) {
+                console.log('[Model] getCurrentUserRole: No authenticated user')
+                return null
+            }
+
+            console.log('[Model] getCurrentUserRole: User ID:', user.id)
+
+            // Query admins table directly - the SELECT policy allows authenticated users to view
+            const { data, error } = await supabase
+                .from('admins')
+                .select('role')
+                .eq('user_id', user.id)
+                .maybeSingle()
+
+            if (error) {
+                console.error('[Model] getCurrentUserRole: Query error:', error)
+                return null
+            }
+
+            const role = data?.role || null
+            console.log('[Model] getCurrentUserRole: Result:', role || 'No role found')
+            return role as 'super_admin' | 'admin' | 'volunteer' | null
+        } catch (err) {
+            console.error('[Model] getCurrentUserRole: Exception:', err)
+            return null
+        }
+    },
+    async getCurrentUserRoleByID(id: string) {
+        console.log('[Model] getCurrentUserRoleByID: Fetching role via direct query...')
+
+        try {
+            // Query admins table directly - the SELECT policy allows authenticated users to view
+            const { data, error } = await supabase
+                .from('admins')
+                .select('role')
+                .eq('user_id', id)
+                .maybeSingle()
+
+            if (error) {
+                console.error('[Model] getCurrentUserRoleByID: Query error:', error)
+                return null
+            }
+
+            const role = data?.role || null
+            console.log('[Model] getCurrentUserRoleByID: Result:', role || 'No role found')
+            return role as 'super_admin' | 'admin' | 'volunteer' | null
+        } catch (err) {
+            console.error('[Model] getCurrentUserRoleByID: Exception:', err)
+            return null
+        }
     }
 }
