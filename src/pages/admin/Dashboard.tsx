@@ -1,6 +1,6 @@
 
 import { MetricCard } from '../../components/MetricCard'
-// import { DataTable } from '../../components/DataTable'
+import { DataTable } from '../../components/DataTable'
 export function Dashboard() {
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
@@ -59,8 +59,7 @@ export function Dashboard() {
           </h2>
         </div>
 
-        {/* TODO: Add DataTable with proper data and columns props */}
-        {/* <DataTable data={[]} columns={[]} /> */}
+        <DataTable data={[]} columns={[]} />
       </section>
     </div>
   )

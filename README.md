@@ -1,73 +1,128 @@
-# React + TypeScript + Vite
+# 🌐 CommunityDB
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A modern community management application built with React, TypeScript, and Supabase. Manage community members, volunteers, activities, and analytics through a beautiful admin dashboard.
 
-Currently, two official plugins are available:
+[![Live Demo](https://img.shields.io/badge/Live-Demo-brightgreen?style=for-the-badge)](https://praneth2580.github.io/CommunityDB)
+[![React](https://img.shields.io/badge/React-19.2-61DAFB?style=flat-square&logo=react)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript)](https://www.typescriptlang.org)
+[![Vite](https://img.shields.io/badge/Vite-7.3-646CFF?style=flat-square&logo=vite)](https://vite.dev)
+[![Supabase](https://img.shields.io/badge/Supabase-Backend-3FCF8E?style=flat-square&logo=supabase)](https://supabase.com)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## ✨ Features
 
-## React Compiler
+- **👥 People Management** - Add, edit, and manage community members
+- **🙋 Volunteer Tracking** - Track and manage volunteers
+- **📊 Analytics Dashboard** - Visualize community statistics
+- **🔐 Role-Based Access** - Super Admin, Admin, and Volunteer roles
+- **🌓 Dark Mode** - Toggle between light and dark themes
+- **📱 Responsive Design** - Works on desktop and mobile
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🛠️ Tech Stack
 
-## Expanding the ESLint configuration
+| Frontend       | Backend            | Styling        |
+| -------------- | ------------------ | -------------- |
+| React 19       | Supabase           | Tailwind CSS 4 |
+| TypeScript     | PostgreSQL         | Lucide Icons   |
+| Redux Toolkit  | Row Level Security |                |
+| React Router 7 |                    |                |
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## 🚀 Getting Started
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+### Prerequisites
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+- Node.js 18+
+- npm or yarn
+- Supabase account
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/praneth2580/CommunityDB.git
+   cd CommunityDB
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Set up environment variables**
+   
+   Create a `.env` file in the root directory:
+   ```env
+   VITE_SUPABASE_URL=your_supabase_url
+   VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+   ```
+
+4. **Set up the database**
+   
+   Run the SQL scripts in your Supabase SQL editor:
+   - `supabase_schema.sql` - Creates tables, RLS policies, and functions
+   - `seed.sql` - (Optional) Seeds sample data
+
+5. **Start the development server**
+   ```bash
+   npm run dev
+   ```
+
+   Open [http://localhost:5173/CommunityDB/](http://localhost:5173/CommunityDB/) in your browser.
+
+## 📂 Project Structure
+
+```
+src/
+├── components/     # Reusable UI components
+├── layouts/        # Page layout wrappers
+├── lib/            # Supabase client configuration
+├── models/         # Data models and API functions
+├── pages/
+│   ├── admin/      # Admin dashboard pages
+│   ├── auth/       # Authentication pages
+│   └── landing/    # Public landing pages
+├── store/          # Redux store and slices
+├── App.tsx         # Main application with routing
+└── main.tsx        # Application entry point
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## 📜 Available Scripts
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+| Command           | Description              |
+| ----------------- | ------------------------ |
+| `npm run dev`     | Start development server |
+| `npm run build`   | Build for production     |
+| `npm run preview` | Preview production build |
+| `npm run lint`    | Run ESLint               |
+| `npm run deploy`  | Deploy to GitHub Pages   |
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+## 🌐 Deployment
+
+The app is deployed to GitHub Pages. To deploy your own version:
+
+```bash
+npm run deploy
 ```
+
+This builds the app and publishes it to the `gh-pages` branch.
+
+**Live URL:** [https://praneth2580.github.io/CommunityDB](https://praneth2580.github.io/CommunityDB)
+
+## 🔒 Authentication
+
+The app uses Supabase Auth with role-based access control:
+
+| Role            | Permissions                    |
+| --------------- | ------------------------------ |
+| **Super Admin** | Full access, can manage admins |
+| **Admin**       | Manage people and volunteers   |
+| **Volunteer**   | Limited view access            |
+
+## 📄 License
+
+This project is private and not licensed for public use.
+
+---
+
+<p align="center">
+  Made with ❤️ using React + TypeScript + Supabase
+</p>
