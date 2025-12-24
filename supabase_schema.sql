@@ -225,15 +225,55 @@ on public.people for select
 to authenticated
 using (true);
 
+-- Anyone with a role (admin/volunteer) can add new people (user_id can be null for non-users)
+create policy "Admins create people"
+on public.people for insert
+to authenticated
+with check (
+  public.get_user_role() in ('super_admin', 'admin', 'volunteer')
+);
+
+-- Users can also create their own profile (self-registration)
 create policy "Users create own profile"
 on public.people for insert
 to authenticated
 with check (auth.uid() = user_id);
 
+-- Super admins can update anyone
+create policy "Super admin update all"
+on public.people for update
+to authenticated
+using (public.get_user_role() = 'super_admin');
+
+-- Regular admins can update non-admin people
+create policy "Admins update non-admins"
+on public.people for update
+to authenticated
+using (
+  public.get_user_role() = 'admin'
+  and not exists (select 1 from public.admins where person_id = people.id)
+);
+
+-- Users can update their own profile
 create policy "Users update self"
 on public.people for update
 to authenticated
 using (auth.uid() = user_id and public.is_not_blocked());
+
+-- Super admins can delete anyone
+create policy "Super admin delete"
+on public.people for delete
+to authenticated
+using (public.get_user_role() = 'super_admin');
+
+-- Regular admins can delete non-admin people
+create policy "Admins delete non-admins"
+on public.people for delete
+to authenticated
+using (
+  public.get_user_role() = 'admin'
+  and not exists (select 1 from public.admins where person_id = people.id)
+);
 
 
 -- ADMINS TABLE POLICIES
