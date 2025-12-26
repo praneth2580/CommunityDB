@@ -1,75 +1,69 @@
 import { useEffect, useState } from 'react'
 import { DataTable } from '../../components/DataTable'
-import { peopleModel, type PersonData, type DeletedPersonData } from '../../models/peopleModel'
-import { Users, AlertCircle, Edit2, Trash2, Eye, History } from 'lucide-react'
-import { PersonDetailsCard } from '../../components/PersonDetailsCard'
-import { useAppSelector } from '../../store'
+import { type PersonData, type DeletedPersonData, peopleModel } from '../../models/peopleModel'
+import { Users, AlertCircle, Edit2, Trash2, Eye, History, Shield } from 'lucide-react'
+import { useAppSelector, useAppDispatch } from '../../store'
+import {
+  setOpenEditModal,
+  setEditingPerson,
+  fetchPeople
+} from '../../store/slices/peopleSlice'
+import { PromoteModal } from '../../components/PromoteModal'
 
-export function People() {
-  const { role: currentUserRole } = useAppSelector(state => state.auth)
-  const [people, setPeople] = useState<PersonData[]>([])
-  const [deletedPeople, setDeletedPeople] = useState<DeletedPersonData[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [selectedPersonId, setSelectedPersonId] = useState<string | null>(null)
+export function PeoplePage() {
+  const dispatch = useAppDispatch()
   const [activeTab, setActiveTab] = useState<'active' | 'deleted'>('active')
+  const [promoteModal, setPromoteModal] = useState<{ isOpen: boolean; personId: string | null; personName: string }>({
+    isOpen: false,
+    personId: null,
+    personName: ''
+  })
+
+  const { role: currentUserRole } = useAppSelector(state => state.auth)
+  const loading = useAppSelector(state => state.people.loading)
+  const error = useAppSelector(state => state.people.error)
+  const people = useAppSelector(state => state.people.persons)
+  const deletedPeople = useAppSelector(state => state.people.deletedPersons)
 
   const openPersonDetails = (id: string) => {
-    setSelectedPersonId(id)
+    window.open(`#/admin/people/${id}`, '_blank')
   }
+
+  const activeFilters = useAppSelector(state => state.filters.activeFilters)
 
   useEffect(() => {
-    loadPeople()
-  }, [])
-
-  async function loadPeople() {
-    try {
-      setLoading(true)
-      const [activeData, deletedData] = await Promise.all([
-        peopleModel.getAllPeople(),
-        peopleModel.getDeletedPeople()
-      ])
-      setPeople(activeData || [])
-      setDeletedPeople(deletedData || [])
-    } catch (err) {
-      console.error('Failed to load people:', err)
-      setError('Failed to load people data. Please try again.')
-    } finally {
-      setLoading(false)
-    }
-  }
+    dispatch(fetchPeople())
+  }, [dispatch, activeFilters])
 
   async function handleDelete(id: string) {
     if (!window.confirm('Are you sure you want to delete this person? They will be archived in the deleted people section.')) return
 
     try {
-      setLoading(true)
       await peopleModel.deletePerson(id)
-      await loadPeople()
+      dispatch(fetchPeople({ force: true }))
     } catch (err) {
       console.error('Error in handleDelete:', err)
       alert('Failed to delete person. Please try again.')
-    } finally {
-      setLoading(false)
     }
   }
 
   async function handleRestore(person: DeletedPersonData) {
     try {
-      setLoading(true)
       await peopleModel.restorePerson(person)
-      await loadPeople()
+      dispatch(fetchPeople({ force: true }))
     } catch (err) {
       console.error('Failed to restore person:', err)
       alert('Failed to restore person. Please try again.')
-    } finally {
-      setLoading(false)
     }
+  }
+
+  async function handlePromote(personId: string, personName: string) {
+    setPromoteModal({ isOpen: true, personId, personName })
   }
 
   const columns = [
     { key: 'full_name', header: 'Name' },
-    { key: 'phone', header: 'Phone' },
+    { key: 'phone', header: 'Phone', nowrap: true },
     { key: 'locality_area', header: 'Area' },
     { key: 'blood_group', header: 'Blood Group' },
     { key: 'is_volunteer', header: 'Role', render: (row: PersonData) => row.is_volunteer ? 'Volunteer' : 'Resident' },
@@ -95,7 +89,10 @@ export function People() {
               <button
                 className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 rounded hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
                 aria-label="Edit"
-                onClick={() => console.log('Edit clicked', row.id)}
+                onClick={() => {
+                  dispatch(setEditingPerson(row))
+                  dispatch(setOpenEditModal(true))
+                }}
               >
                 <Edit2 className="w-3.5 h-3.5" />
               </button>
@@ -108,6 +105,16 @@ export function People() {
                 onClick={() => row.id && handleDelete(row.id)}
               >
                 <Trash2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {currentUserRole === 'super_admin' && !isTargetAdmin && (
+              <button
+                className="p-1 text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 rounded hover:bg-slate-100 dark:hover:bg-neutral-800 transition-colors"
+                aria-label="Promote"
+                onClick={() => row.id && handlePromote(row.id, row.full_name)}
+              >
+                <Shield className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
@@ -149,25 +156,25 @@ export function People() {
   ]
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-      <div className="flex items-end justify-between pb-4 border-b border-slate-200 dark:border-neutral-800">
+    <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2 duration-500">
+      <div className="flex items-end justify-between pb-3 border-b border-slate-200 dark:border-neutral-800">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-            <Users className="w-6 h-6 text-slate-500" />
+          <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
+            <Users className="w-5 h-5 text-slate-500" />
             People
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
             Manage donors and recipients database.
           </p>
         </div>
-        <div className="text-xs font-mono text-slate-400">
+        <div className="text-[10px] font-mono text-slate-400">
           {loading ? 'Loading...' : `${activeTab === 'active' ? people.length : deletedPeople.length} Records`}
         </div>
       </div>
 
       <div className="flex items-center gap-4 border-b border-slate-200 dark:border-neutral-800">
         <button
-          className={`pb-2 px-1 text-sm font-medium transition-colors relative ${activeTab === 'active'
+          className={`pb-2 px-1 text-xs font-semibold transition-colors relative ${activeTab === 'active'
             ? 'text-blue-600 dark:text-blue-400'
             : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
             }`}
@@ -179,7 +186,7 @@ export function People() {
           )}
         </button>
         <button
-          className={`pb-2 px-1 text-sm font-medium transition-colors relative ${activeTab === 'deleted'
+          className={`pb-2 px-1 text-xs font-semibold transition-colors relative ${activeTab === 'deleted'
             ? 'text-blue-600 dark:text-blue-400'
             : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
             }`}
@@ -193,8 +200,8 @@ export function People() {
       </div>
 
       {error ? (
-        <div className="p-4 bg-red-50 text-red-600 rounded-lg flex items-center gap-2">
-          <AlertCircle className="w-5 h-5" />
+        <div className="p-3 bg-red-50 text-red-600 rounded-lg flex items-center gap-2 text-xs">
+          <AlertCircle className="w-4 h-4" />
           {error}
         </div>
       ) : activeTab === 'active' ? (
@@ -211,12 +218,13 @@ export function People() {
         />
       )}
 
-      {selectedPersonId && (
-        <PersonDetailsCard
-          personId={selectedPersonId}
-          onClose={() => setSelectedPersonId(null)}
-        />
-      )}
+      <PromoteModal
+        isOpen={promoteModal.isOpen}
+        onClose={() => setPromoteModal({ ...promoteModal, isOpen: false })}
+        personId={promoteModal.personId}
+        personName={promoteModal.personName}
+        onSuccess={() => dispatch(fetchPeople({ force: true }))}
+      />
     </div>
   )
 }

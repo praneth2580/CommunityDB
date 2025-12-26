@@ -14,8 +14,10 @@ export interface PersonData {
     geo_location?: any // PostGIS point
     participation?: {
         event: {
+            id: string
             title: string
             start_time: string
+            end_time?: string
         }
         status: string
     }[]
@@ -100,31 +102,32 @@ export const peopleModel = {
     },
 
     /**
-     * Get a single person by ID
+     * Get a single person by ID with enhanced participation data
      */
     async getPersonById(id: string) {
         // Fetch person basic info
         const { data: person, error } = await supabase
             .from('people')
-            .select('*')
+            .select('*, admins(role)')
             .eq('id', id)
             .single()
 
         if (error) throw error
 
-        // Fetch recent participation
+        // Fetch all participation to calculate stats
         const { data: participation } = await supabase
             .from('event_participants')
             .select(`
                 status,
                 event:events (
+                    id,
                     title,
-                    start_time
+                    start_time,
+                    end_time
                 )
             `)
             .eq('person_id', id)
             .order('created_at', { foreignTable: 'events', ascending: false })
-            .limit(5)
 
         return {
             ...person,
@@ -136,14 +139,62 @@ export const peopleModel = {
     },
 
     /**
+     * Get all volunteers (Admin only)
+     */
+    async getVolunteers() {
+        const { data, error } = await supabase
+            .from('people')
+            .select('*, admins!inner(role)')
+            .or('is_volunteer.eq.true')
+            .or('role.eq.volunteer', { foreignTable: 'admins' })
+            .order('full_name', { ascending: true })
+
+        if (error) throw error
+        return data as PersonData[]
+    },
+
+    /**
      * Get all people (Admin only)
      * Supports basic searching/filtering if needed later
      */
-    async getAllPeople() {
+    async getAllPeople(filters?: Record<string, string[]>) {
+        let query = supabase
+            .from('people')
+            .select('*, admins(role)')
+
+        if (filters) {
+            Object.entries(filters).forEach(([category, values]) => {
+                if (values.length > 0) {
+                    if (category === 'blood_group') {
+                        query = query.in('blood_group', values)
+                    } else if (category === 'is_blood_donor') {
+                        const isDonor = values.map(v => v === 'Donor')
+                        query = query.in('is_blood_donor', isDonor)
+                    } else if (category === 'is_volunteer') {
+                        const isVolunteer = values.map(v => v === 'Volunteer')
+                        query = query.in('is_volunteer', isVolunteer)
+                    }
+                }
+            })
+        }
+
+        const { data, error } = await query.order('created_at', { ascending: false })
+
+        if (error) throw error
+        return data as PersonData[]
+    },
+
+    /**
+     * Search for people by name, email, or phone
+     */
+    async searchPeople(query: string) {
+        if (!query) return []
+
         const { data, error } = await supabase
             .from('people')
             .select('*, admins(role)')
-            .order('created_at', { ascending: false })
+            .or(`full_name.ilike.%${query}%,email.ilike.%${query}%,phone.ilike.%${query}%`)
+            .limit(10)
 
         if (error) throw error
         return data as PersonData[]
@@ -259,5 +310,18 @@ export const peopleModel = {
             console.error('[Model] getCurrentUserRoleByID: Exception:', err)
             return null
         }
+    },
+
+    /**
+     * Promote a person to an admin role
+     * Note: Requires super_admin privileges at DB level
+     */
+    async promoteToAdmin(person_id: string, role: string) {
+        const { error } = await supabase.rpc('promote_to_admin', {
+            target_person_id: person_id,
+            target_role: role
+        })
+
+        if (error) throw error
     }
 }

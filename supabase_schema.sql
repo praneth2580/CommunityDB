@@ -102,6 +102,28 @@ begin
     raise exception 'Unauthorized';
   end if;
 
+  if not exists (
+    select 1 from public.people
+    where id = target_person_id
+  ) then
+    raise exception 'Person not found';
+  end if;
+
+  if exists (
+    select 1 from public.admins
+    where person_id = target_person_id
+  ) then
+    raise exception 'Person is already an admin';
+  end if;
+
+  if exists (
+    select 1 from public.admins
+    inner join public.people on public.admins.person_id = public.people.id
+    where public.people.id <> target_person_id and public.people.email = (select email from public.people where id = target_person_id)
+  ) then
+    raise exception 'Person with same email is already an admin';
+  end if;
+
   insert into public.admins (user_id, person_id, role)
   select user_id, id, target_role
   from public.people
@@ -275,7 +297,6 @@ using (
   and not exists (select 1 from public.admins where person_id = people.id)
 );
 
-
 -- ADMINS TABLE POLICIES
 create policy "View admins"
 on public.admins for select
@@ -287,6 +308,58 @@ on public.admins for all
 to authenticated
 using (public.get_user_role() = 'super_admin');
 
+-- EVENTS TABLE POLICIES
+create policy "Users view events"
+on public.events for select
+to authenticated
+using (true);
+
+create policy "Super admin manages events"
+on public.events for all
+to authenticated
+using (public.get_user_role() = 'super_admin' AND public.is_not_blocked());
+
+-- EVENTS PARTICIPANTS TABLE POLICIES
+create policy "Users view events participants"
+on public.event_participants for select
+to authenticated
+using (true);
+
+create policy "Super admin manages events participants"
+on public.event_participants for all
+to authenticated
+using (public.get_user_role() = 'super_admin' AND public.is_not_blocked());
+
+create policy "Admins insert events participants"
+on public.event_participants for insert
+to authenticated
+with check (public.get_user_role() = 'admin' AND public.is_not_blocked());
+
+create policy "Admins update events participants"
+on public.event_participants for update
+to authenticated
+using (public.get_user_role() = 'admin' AND public.is_not_blocked());
+
+-- RESOURCES TABLE POLICIES
+create policy "Users view resources"
+on public.resources for select
+to authenticated
+using (true);
+
+create policy "Super admin manages resources"
+on public.resources for all
+to authenticated
+using (public.get_user_role() = 'super_admin' AND public.is_not_blocked());
+
+create policy "Admins insert resources"
+on public.resources for insert
+to authenticated
+with check (public.get_user_role() = 'admin' AND public.is_not_blocked());
+
+create policy "Admins update resources"
+on public.resources for update
+to authenticated
+using (public.get_user_role() = 'admin' AND public.is_not_blocked());
 
 -- DELETED PEOPLE TABLE
 create table public.deleted_people (

@@ -7,12 +7,16 @@ import { clearAuth, initAuthUser } from "./store/slices/authSlice";
 import PublicLayout from "./layouts/PublicLayout";
 import AdminLayout from "./layouts/AdminLayout";
 
-import { Dashboard } from "./pages/admin/Dashboard";
-import { People } from "./pages/admin/People";
-import { Volunteers } from "./pages/admin/Volunteers";
-import { Analytics } from "./pages/admin/Analytics";
-import { Profile } from "./pages/admin/Profile";
-import { Settings } from "./pages/admin/Settings";
+import { DashboardPage } from "./pages/admin/DashboardPage";
+import { PeoplePage } from "./pages/admin/PeoplePage";
+import { VolunteersPage } from "./pages/admin/VolunteersPage";
+import { EventsPage } from "./pages/admin/EventsPage";
+import { EventDetailsPage } from "./pages/admin/EventDetailsPage";
+import { AnalyticsPage } from "./pages/admin/AnalyticsPage";
+import { PersonDetailsPage } from "./pages/admin/PersonDetailsPage";
+import { ProfilePage } from "./pages/admin/ProfilePage";
+import { SettingsPage } from "./pages/admin/SettingsPage";
+import { BulkOperationsPage } from "./pages/admin/BulkOperationsPage";
 import { LandingPage } from "./pages/landing/LandingPage";
 import { ActivitiesPage } from "./pages/landing/ActivitiesPage";
 
@@ -108,14 +112,19 @@ export default function App() {
             <AdminLayout />
           </ProtectedRoute>
         }>
-          <Route index element={<Dashboard />} />
+          <Route index element={<DashboardPage />} />
 
-          <Route path="people" element={<People />} />
-          <Route path="volunteers" element={<Volunteers />} />
-          <Route path="analytics" element={<Analytics />} />
-          <Route path="profile" element={<Profile />} />
-          <Route path="settings" element={<Settings isDark={isDark} toggleTheme={() => setIsDark(!isDark)} />} />
+          <Route path="people" element={<PeoplePage />} />
+          <Route path="people/:id" element={<PersonDetailsPage />} />
+          <Route path="volunteers" element={<VolunteersPage />} />
+          <Route path="events" element={<EventsPage />} />
+          <Route path="events/:id" element={<EventDetailsPage />} />
+          <Route path="analytics" element={<AnalyticsPage />} />
+          <Route path="profile" element={<ProfilePage />} />
+          <Route path="settings" element={<SettingsPage isDark={isDark} toggleTheme={() => setIsDark(!isDark)} />} />
+          <Route path="bulk" element={<BulkOperationsPage />} />
         </Route>
+
 
       </Routes>
     </Router>

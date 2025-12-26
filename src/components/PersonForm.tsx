@@ -61,7 +61,7 @@ const MARITAL_STATUSES: { value: MaritalStatus; label: string }[] = [
 ]
 const COMMON_SKILLS = ['First Aid', 'Driving', 'Cooking', 'Teaching', 'Medical', 'Administration', 'IT Support']
 
-export function AddPersonForm({ isOpen, onClose, editData, onSuccess }: PersonFormProps) {
+export function PersonForm({ isOpen, onClose, editData, onSuccess }: PersonFormProps) {
   const [formData, setFormData] = useState<FormState>(initialFormState)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -548,8 +548,8 @@ function ToggleButton({ value, onChange, labels }: ToggleButtonProps) {
         type="button"
         onClick={() => onChange(false)}
         className={`py-2 text-sm font-medium rounded-md transition-all ${!value
-            ? 'bg-white dark:bg-neutral-700 text-slate-900 dark:text-white shadow-sm'
-            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+          ? 'bg-white dark:bg-neutral-700 text-slate-900 dark:text-white shadow-sm'
+          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
           }`}
       >
         {labels[0]}
@@ -558,8 +558,8 @@ function ToggleButton({ value, onChange, labels }: ToggleButtonProps) {
         type="button"
         onClick={() => onChange(true)}
         className={`py-2 text-sm font-medium rounded-md transition-all ${value
-            ? 'bg-white dark:bg-neutral-700 text-slate-900 dark:text-white shadow-sm'
-            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
+          ? 'bg-white dark:bg-neutral-700 text-slate-900 dark:text-white shadow-sm'
+          : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
           }`}
       >
         {labels[1]}

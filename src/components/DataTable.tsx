@@ -9,6 +9,7 @@ import {
 export interface Column<T = any> {
   key: string
   header: string
+  nowrap?: boolean
   render?: (row: T) => React.ReactNode
 }
 
@@ -72,7 +73,7 @@ export function DataTable<T extends { id?: string }>({ data, columns, loading }:
                 className="group hover:bg-slate-50 dark:hover:bg-neutral-900/50 transition-colors"
               >
                 {columns.map((col) => (
-                  <td key={col.key} className="px-3 py-3 text-slate-900 dark:text-slate-100 first:pl-4 last:pr-4">
+                  <td key={col.key} className={`${col.nowrap ? 'whitespace-nowrap' : ''} px-3 py-3 text-slate-900 dark:text-slate-100 first:pl-4 last:pr-4`}>
                     {col.render ? col.render(row) : (row as any)[col.key] || '-'}
                   </td>
                 ))}
