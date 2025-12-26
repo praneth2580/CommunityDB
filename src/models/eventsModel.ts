@@ -47,7 +47,7 @@ export const eventsModel = {
             const types = Array.isArray(filters.type) ? filters.type : [filters.type]
             if (types.length > 0) {
                 // Map display names to technical types if necessary
-                const technicalTypes = types.map(t => t.toLowerCase().replace(' ', '_'))
+                const technicalTypes = types.map((t: string) => t.toLowerCase().replace(' ', '_'))
                 query = query.in('type', technicalTypes)
             }
         }
@@ -55,7 +55,7 @@ export const eventsModel = {
         if (filters?.status) {
             const statuses = Array.isArray(filters.status) ? filters.status : [filters.status]
             if (statuses.length > 0) {
-                query = query.in('status', statuses.map(s => s.toLowerCase()))
+                query = query.in('status', statuses.map((s: string) => s.toLowerCase()))
             }
         }
 
